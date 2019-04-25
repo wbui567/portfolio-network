@@ -1,0 +1,65 @@
+#serveur TCP/443
+#mode server
+proto tcp
+port 1194
+dev tun
+
+# Cles et certificats
+ca ca.crt
+cert server.crt
+key server.key
+dh dh1024.pem
+cipher AES-256-CBC
+
+# Reseau
+client-config-dir ccd
+server 10.8.0.0 255.255.255.0
+route 10.9.0.0 255.255.255.252
+route 192.168.0.0 255.255.255.0
+push "redirect-gateway def1 bypass-dhcp"
+ push "dhcp-option DNS 10.10.31.254"
+ push "dhcp-option DNS 8.8.8.8"
+ push "dhcp-option DNS 8.8.4.4"
+push "dhcp-option DOMAIN itcast.local"
+push "dhcp-option SEARCH itcast.local"
+push "route 10.10.31.0 255.255.255.0"
+push "route 192.168.0.0 255.255.255.0"
+
+
+# Options
+persist-key
+persist-tun
+# Keepalive: send ping every 10 seconds, tunnel down after 120 seconds no response.
+keepalive 5 60
+reneg-sec 432000
+
+# Securite
+user nobody
+comp-lzo
+
+client-to-client
+username-as-common-name
+client-cert-not-required
+auth-user-pass-verify /etc/openvpn/script/login.sh via-env
+
+# script connect-disconnect
+script-security 3 system
+client-connect script/connect.sh
+client-disconnect script/disconnect.sh
+
+# Log
+verb 3
+mute 20
+status  /var/log/openvpn/server_tcp.log
+log-append /var/log/openvpn/openvpn.log
+up /etc/openvpn/update-resolv-conf
+#down /etc/openvpn/update-resolv-conf
+
+###  connect.sh
+mysql -h$HOST -P$PORT -u$USER -p$PASS $DB -e "INSERT INTO log (log_id,username,log_trusted_ip,log_trusted_port,log_remote_ip,log_remote_port,log_start_time,log_end_time,log_received,log_send) VALUES(NULL,'$common_name','$trusted_ip','$trusted_port','$ifconfig_pool_remote_ip','$remote_port_1',now(),'0000-00-00 00:00:00','$bytes_received','$bytes_sent')"
+##set status online to user connected
+mysql -h$HOST -P$PORT -u$USER -p$PASS $DB -e "UPDATE user_encrypted SET user_online=1 WHERE username='$common_name'"
+
+##  disconnect.sh
+mysql -h$HOST -P$PORT -u$USER -p$PASS $DB -e "UPDATE log SET log_end_time=now(),log_received='$bytes_received',log_send='$bytes_sent' WHERE log_trusted_ip='$trusted_ip' AND log_trusted_port='$trusted_port' AND user_id='$common_name' AND log_end_time='0000-00-00 00:00:00'"
+
